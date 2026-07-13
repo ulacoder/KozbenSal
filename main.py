@@ -135,6 +135,9 @@ class KozbenSalApp:
         if gaze is None:
             return
 
+        # Check for blink
+        blink_detected = self.eye_tracker.is_blink_detected()
+
         current_time = pygame.time.get_ticks() / 1000.0
 
         if self.mode == AppMode.CALIBRATION:
@@ -156,16 +159,9 @@ class KozbenSalApp:
                 if screen_pos:
                     self.canvas.update_cursor(screen_pos[0], screen_pos[1])
 
-                    # Check for dwell to activate drawing
-                    if self.canvas.check_dwell(current_time):
-                        if self.canvas.draw_mode.value == 0:  # NONE
-                            self.canvas.start_drawing()
-                        else:
-                            self.canvas.end_stroke()
-
-                    # Add point if drawing
-                    if self.canvas.draw_mode.value == 1:  # DRAWING
-                        self.canvas.add_point()
+                    # Handle blink event
+                    if blink_detected:
+                        self.canvas.on_blink()
 
     def draw(self):
         """Render frame."""
@@ -224,7 +220,8 @@ class KozbenSalApp:
 
         # Draw stats
         stats_y = self.screen_height - 40
-        stats_text = f"Strokes: {self.canvas.get_stroke_count()} | Points: {self.canvas.get_total_points()}"
+        mode_text = "Waiting for first point" if self.canvas.draw_mode.value == 0 else "Waiting for second point"
+        stats_text = f"Lines: {self.canvas.get_stroke_count()} | {mode_text}"
         text = self.font_small.render(stats_text, True, (100, 100, 100))
         self.screen.blit(text, (10, stats_y))
 
@@ -267,7 +264,7 @@ class KozbenSalApp:
 
         # Shortcuts (if in drawing mode)
         if self.mode == AppMode.DRAWING:
-            shortcuts = "U: undo | C: clear | G: grid | S: save | TAB: recalibrate"
+            shortcuts = "BLINK: place points | U: undo | C: clear | G: grid | S: save | TAB: recalibrate"
             text = self.font_small.render(shortcuts, True, (150, 150, 150))
             self.screen.blit(text, (200, 8))
 
@@ -278,15 +275,21 @@ class KozbenSalApp:
 
         print("KozbenSal started")
         print("Controls:")
+        print("  BLINK - Place points and draw lines")
         print("  TAB - Switch between calibration and drawing")
         print("  R - Reset calibration")
         print("  P - Pause/unpause")
         print("  E - Toggle eye preview")
-        print("  U - Undo last stroke")
+        print("  U - Undo last line")
         print("  C - Clear canvas")
         print("  G - Toggle grid")
         print("  S - Save drawing")
         print("  ESC - Exit")
+        print("")
+        print("How to draw:")
+        print("  1. Blink once - places first point (green)")
+        print("  2. Move your gaze to second location")
+        print("  3. Blink again - draws line between points")
 
         while self.running:
             self.handle_events()

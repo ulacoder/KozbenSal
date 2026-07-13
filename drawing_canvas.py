@@ -11,9 +11,9 @@ from enum import Enum
 
 class DrawMode(Enum):
     """Drawing modes."""
-    NONE = 0
-    DRAWING = 1
-    PAUSED = 2
+    NONE = 0          # Waiting for first point
+    WAITING = 1       # First point placed, waiting for second
+    PREVIEW = 2       # Showing line preview between points
 
 
 class Stroke:
@@ -63,11 +63,9 @@ class DrawingCanvas:
         self.cursor_x = width // 2
         self.cursor_y = height // 2
 
-        # Dwell time for activation (seconds)
-        self.dwell_time = 1.5
-        self.dwell_threshold = 15  # pixels - how close cursor must stay
-        self.dwell_start_time: Optional[float] = None
-        self.dwell_start_pos: Optional[Tuple[int, int]] = None
+        # Point-to-point drawing
+        self.first_point: Optional[Tuple[int, int]] = None
+        self.second_point: Optional[Tuple[int, int]] = None
 
         # Drawing settings
         self.draw_color = (0, 0, 0)
@@ -88,75 +86,35 @@ class DrawingCanvas:
         self.cursor_x = x
         self.cursor_y = y
 
-    def check_dwell(self, current_time: float) -> bool:
+    def on_blink(self):
         """
-        Check if cursor has dwelled long enough to trigger action.
+        Handle blink event - places points and draws lines.
 
-        Args:
-            current_time: Current time in seconds
-
-        Returns:
-            True if dwell completed
+        Logic:
+        - First blink: place first point
+        - Second blink: place second point and draw line between them
         """
-        # Start dwell if not started
-        if self.dwell_start_time is None:
-            self.dwell_start_time = current_time
-            self.dwell_start_pos = (self.cursor_x, self.cursor_y)
-            return False
+        if self.draw_mode == DrawMode.NONE:
+            # Place first point
+            self.first_point = (self.cursor_x, self.cursor_y)
+            self.draw_mode = DrawMode.WAITING
+            print(f"Point 1 placed at {self.first_point}")
 
-        # Check if cursor moved too much
-        if self.dwell_start_pos is not None:
-            dx = self.cursor_x - self.dwell_start_pos[0]
-            dy = self.cursor_y - self.dwell_start_pos[1]
-            distance = np.sqrt(dx * dx + dy * dy)
+        elif self.draw_mode == DrawMode.WAITING:
+            # Place second point and draw line
+            self.second_point = (self.cursor_x, self.cursor_y)
 
-            if distance > self.dwell_threshold:
-                # Reset dwell
-                self.dwell_start_time = current_time
-                self.dwell_start_pos = (self.cursor_x, self.cursor_y)
-                return False
+            # Create a stroke with these two points
+            stroke = Stroke(self.draw_color, self.draw_thickness)
+            stroke.add_point(self.first_point[0], self.first_point[1])
+            stroke.add_point(self.second_point[0], self.second_point[1])
+            self.strokes.append(stroke)
 
-        # Check if enough time passed
-        elapsed = current_time - self.dwell_start_time
-        if elapsed >= self.dwell_time:
-            self.dwell_start_time = None
-            self.dwell_start_pos = None
-            return True
+            print(f"Point 2 placed at {self.second_point}, line drawn!")
 
-        return False
-
-    def get_dwell_progress(self, current_time: float) -> float:
-        """
-        Get dwell progress (0.0 to 1.0).
-
-        Args:
-            current_time: Current time in seconds
-
-        Returns:
-            Progress from 0.0 to 1.0
-        """
-        if self.dwell_start_time is None:
-            return 0.0
-
-        elapsed = current_time - self.dwell_start_time
-        return min(elapsed / self.dwell_time, 1.0)
-
-    def start_drawing(self):
-        """Start a new stroke."""
-        self.current_stroke = Stroke(self.draw_color, self.draw_thickness)
-        self.draw_mode = DrawMode.DRAWING
-
-    def add_point(self):
-        """Add current cursor position to stroke."""
-        if self.current_stroke is not None and self.draw_mode == DrawMode.DRAWING:
-            self.current_stroke.add_point(self.cursor_x, self.cursor_y)
-
-    def end_stroke(self):
-        """Finish current stroke."""
-        if self.current_stroke is not None:
-            if len(self.current_stroke.points) > 1:
-                self.strokes.append(self.current_stroke)
-            self.current_stroke = None
+            # Reset for next line
+            self.first_point = None
+            self.second_point = None
             self.draw_mode = DrawMode.NONE
 
     def undo(self):
@@ -170,10 +128,12 @@ class DrawingCanvas:
             self.current_stroke.points.pop()
 
     def clear(self):
-        """Clear all strokes."""
+        """Clear all strokes and reset state."""
         self.strokes.clear()
         self.current_stroke = None
         self.draw_mode = DrawMode.NONE
+        self.first_point = None
+        self.second_point = None
         self.canvas.fill((255, 255, 255))
 
     def toggle_grid(self):
@@ -202,53 +162,33 @@ class DrawingCanvas:
         for stroke in self.strokes:
             stroke.draw(self.canvas)
 
-        # Draw current stroke
-        if self.current_stroke is not None:
-            self.current_stroke.draw(self.canvas)
-
-            # Draw line from last point to cursor
-            if self.current_stroke.points:
-                last_point = self.current_stroke.points[-1]
-                pygame.draw.line(self.canvas, (200, 200, 200),
-                               last_point, (self.cursor_x, self.cursor_y), 1)
+        # Draw first point if placed
+        if self.first_point is not None:
+            pygame.draw.circle(self.canvas, (0, 255, 0), self.first_point, 8, -1)
+            # Draw preview line from first point to cursor
+            pygame.draw.line(self.canvas, (150, 150, 150),
+                           self.first_point, (self.cursor_x, self.cursor_y), 2)
 
         return self.canvas
 
     def draw_cursor(self, surface: pygame.Surface, current_time: float):
         """
-        Draw cursor and dwell indicator.
+        Draw cursor with state indicator.
 
         Args:
             surface: Surface to draw on
-            current_time: Current time for dwell animation
+            current_time: Current time (unused now, kept for compatibility)
         """
-        # Draw cursor
-        cursor_color = (255, 0, 0) if self.draw_mode == DrawMode.DRAWING else (100, 100, 255)
-        pygame.draw.circle(surface, cursor_color, (self.cursor_x, self.cursor_y), 8, 2)
+        # Draw cursor - color depends on state
+        if self.draw_mode == DrawMode.NONE:
+            cursor_color = (100, 100, 255)  # Blue - waiting for first point
+        elif self.draw_mode == DrawMode.WAITING:
+            cursor_color = (255, 165, 0)    # Orange - waiting for second point
+        else:
+            cursor_color = (100, 100, 255)
 
-        # Draw dwell progress indicator
-        if self.dwell_start_time is not None:
-            progress = self.get_dwell_progress(current_time)
-            if progress > 0:
-                # Draw progress arc
-                radius = 15
-                angle = int(360 * progress)
-                rect = pygame.Rect(self.cursor_x - radius, self.cursor_y - radius,
-                                 radius * 2, radius * 2)
-
-                # Draw arc segments
-                if angle > 0:
-                    points = []
-                    points.append((self.cursor_x, self.cursor_y))
-                    for i in range(0, angle + 1, 5):
-                        rad = np.radians(i - 90)
-                        x = self.cursor_x + radius * np.cos(rad)
-                        y = self.cursor_y + radius * np.sin(rad)
-                        points.append((int(x), int(y)))
-
-                    if len(points) > 2:
-                        pygame.draw.polygon(surface, (0, 255, 0, 100), points)
-                        pygame.draw.lines(surface, (0, 200, 0), False, points[1:], 2)
+        pygame.draw.circle(surface, cursor_color, (self.cursor_x, self.cursor_y), 10, 3)
+        pygame.draw.circle(surface, (255, 255, 255), (self.cursor_x, self.cursor_y), 3, -1)
 
     def save_image(self, filename: str):
         """
