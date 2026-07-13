@@ -194,9 +194,7 @@ Open Source - Use freely to help people.
 
 ## 👤 Author
 
-Created for **nFactorial Incubator 2026**
-
-**Contact**: ulagatnurtas10@gmail.com
+**Contact**: nurtasulagat@gmail.com
 
 **Repository**: https://github.com/ulacoder/KozbenSal
 
@@ -399,9 +397,7 @@ Open Source - используйте свободно для помощи люд
 
 ## 👤 Автор
 
-Создано для **nFactorial Incubator 2026**
-
-**Contact**: ulagatnurtas10@gmail.com
+**Contact**: nurtasulagat@gmail.com
 
 **Repository**: https://github.com/ulacoder/KozbenSal
 
